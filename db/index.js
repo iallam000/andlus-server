@@ -8,6 +8,7 @@ const path = require('path');
 
 // مسار ملف قاعدة البيانات (قابل للتهيئة عبر متغيّر بيئة)
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'andlus.db');
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 const db = new Database(DB_PATH);
 db.pragma('foreign_keys = ON');

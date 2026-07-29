@@ -7,11 +7,23 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const cfg = require('./config');
-const { initSchema, seedDefaults } = require('./db');
+const { db, initSchema, seedDefaults } = require('./db');
+const { hashPassword } = require('./config/auth');
 
 // تهيئة قاعدة البيانات عند الإقلاع
 initSchema();
 seedDefaults();
+
+// بذر حساب المدير تلقائياً إن لم يكن موجود
+(async () => {
+  const exists = db.prepare("SELECT 1 FROM users WHERE username='admin'").get();
+  if (!exists) {
+    const hash = await hashPassword('Admin@123');
+    db.prepare("INSERT INTO users (id,username,password_hash,name,role) VALUES (?,?,?,?,?)")
+      .run('__admin__','admin',hash,'مدير النظام','admin');
+    console.log('✓ تم إنشاء حساب المدير: admin / Admin@123');
+  }
+})();
 
 const app = express();
 

@@ -29,7 +29,18 @@ const app = express();
 
 // ─── حمايات أمنية ───
 app.set('trust proxy', 1);              // خلف بروكسي الاستضافة (Railway)
-app.use(helmet());                       // رؤوس HTTP آمنة
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://unpkg.com", "'unsafe-inline'"],
+      styleSrc: ["'self'", "https://fonts.googleapis.com", "'unsafe-inline'"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+    },
+  },
+}));                       // رؤوس HTTP آمنة
 app.use(cors({ origin: process.env.CORS_ORIGIN || true, credentials: true }));
 app.use(express.json({ limit: '2mb' })); // حدّ حجم الطلب
 

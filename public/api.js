@@ -17,9 +17,9 @@
       body: body ? JSON.stringify(body) : undefined,
     });
     if (res.status === 401) {
-      // انتهت الجلسة — نمسح الرمز ونعيد للدخول
+      const hadToken = !!TOKEN;
       TOKEN = null; localStorage.removeItem('andlus_token');
-      if (!path.includes('/auth/login')) window.location.reload();
+      if (hadToken && !path.includes('/auth/login')) window.location.reload();
       throw new Error('انتهت الجلسة');
     }
     const data = await res.json().catch(() => ({}));

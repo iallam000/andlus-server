@@ -3893,7 +3893,7 @@ function AdminPanel({ onLogout }) {
   </div>
   )}
   {tab==="report"&&(
-  <ExecGrowthReport users={users||[]} idps={idps} approvals={approvals} impactData={impactData}/>
+  <ExecGrowthReport users={users||[]} idps={idps} approvals={approvals} impactData={{}}/>
   )}
   {tab==="library"&&(<>
   <LibraryManager

@@ -1698,7 +1698,7 @@ function ResultsReadingSection({ targetUser, currentUser, readings, onSave }) {
   );
 }
 
-function Card360({ targetUser, empEval, onSaveIdp, idpData, onClose, readings, onSaveReadings, currentUser, hidePrint, allEvals, allUsers }) {
+function Card360({ targetUser, empEval, onSaveIdp, idpData, onClose, readings, onSaveReadings, currentUser, hidePrint, allEvals, allUsers, impactData = {} }) {
   const [tab,setTab] = useState("scores");
   // إصلاح: نعرض فقط أطراف التقييم الفعلية لدور هذا الموظف (لا كل الأطراف)
   const roleParties = partiesForRole(targetUser);

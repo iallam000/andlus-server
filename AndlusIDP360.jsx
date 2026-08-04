@@ -892,8 +892,8 @@ function ChangePasswordButton({ userId, currentPassword, compact }) {
   🔑 كلمة المرور
    </button>
    {open&&(
-  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setOpen(false);}}>
-  <div style={{background:"#FFFFFF",border:"1px solid #B3D0EA",borderRadius:20,width:"100%",maxWidth:420,padding:26,direction:"rtl"}}>
+  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:900,display:"flex",overflowY:"auto",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setOpen(false);}}>
+  <div style={{background:"#FFFFFF",border:"1px solid #B3D0EA",borderRadius:20,width:"100%",maxWidth:420,padding:26,direction:"rtl",margin:"auto",maxHeight:"94vh",overflowY:"auto",boxSizing:"border-box"}}>
    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
    <span style={{fontSize:15,fontWeight:900,color:"#15385C"}}>🔑 تغيير كلمة المرور</span>
    <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",color:"#5B7A9E",fontSize:22,cursor:"pointer"}}>✕</button>
@@ -963,8 +963,8 @@ function AdminChangePasswordButton() {
   🔑 كلمة المرور
    </button>
    {open&&(
-  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setOpen(false);}}>
-  <div style={{background:"#FFFFFF",border:"1px solid #B3D0EA",borderRadius:20,width:"100%",maxWidth:420,padding:26,direction:"rtl"}}>
+  <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:900,display:"flex",overflowY:"auto",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setOpen(false);}}>
+  <div style={{background:"#FFFFFF",border:"1px solid #B3D0EA",borderRadius:20,width:"100%",maxWidth:420,padding:26,direction:"rtl",margin:"auto",maxHeight:"94vh",overflowY:"auto",boxSizing:"border-box"}}>
    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
    <span style={{fontSize:15,fontWeight:900,color:"#15385C"}}>🔑 تغيير كلمة مرور المدير</span>
    <button onClick={()=>setOpen(false)} style={{background:"none",border:"none",color:"#5B7A9E",fontSize:22,cursor:"pointer"}}>✕</button>

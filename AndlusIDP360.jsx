@@ -891,7 +891,7 @@ function ChangePasswordButton({ userId, currentPassword, compact }) {
   style={{padding:compact?"4px 10px":"5px 12px",borderRadius:20,border:"1px solid #3B82F630",background:"#3B82F610",color:"#2E7FB8",fontSize:11,cursor:"pointer"}}>
   🔑 كلمة المرور
    </button>
-   {open&&(
+   {open&&ReactDOM.createPortal(
   <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:900,display:"flex",overflowY:"auto",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setOpen(false);}}>
   <div style={{background:"#FFFFFF",border:"1px solid #B3D0EA",borderRadius:20,width:"100%",maxWidth:420,padding:26,direction:"rtl",margin:"auto",maxHeight:"94vh",overflowY:"auto",boxSizing:"border-box"}}>
    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
@@ -922,7 +922,7 @@ function ChangePasswordButton({ userId, currentPassword, compact }) {
    </div>
   </div>
   </div>
-   )}
+   , document.body)}
   </>
   );
 }
@@ -962,7 +962,7 @@ function AdminChangePasswordButton() {
   style={{padding:"5px 11px",borderRadius:20,border:"1px solid #3B82F630",background:"#3B82F610",color:"#2E7FB8",fontSize:11,cursor:"pointer"}}>
   🔑 كلمة المرور
    </button>
-   {open&&(
+   {open&&ReactDOM.createPortal(
   <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:900,display:"flex",overflowY:"auto",padding:16}} onClick={e=>{if(e.target===e.currentTarget)setOpen(false);}}>
   <div style={{background:"#FFFFFF",border:"1px solid #B3D0EA",borderRadius:20,width:"100%",maxWidth:420,padding:26,direction:"rtl",margin:"auto",maxHeight:"94vh",overflowY:"auto",boxSizing:"border-box"}}>
    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
@@ -993,7 +993,7 @@ function AdminChangePasswordButton() {
    </div>
   </div>
   </div>
-   )}
+   , document.body)}
   </>
   );
 }

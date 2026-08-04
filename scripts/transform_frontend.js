@@ -16,12 +16,13 @@ let code = fs.readFileSync(inPath, 'utf8');
 const report = [];
 
 // 1) استبدال تعريف st ليستخدم andlusAPI (قبل أي معالجة لـ window.storage)
-const stOld = /const st = \{\s*\n\s*get: async[\s\S]*?setShared: async[^\n]*\n\};/;
+const stOld = /const st = \{\s*\n\s*get: async[\s\S]*?forgotPassword: async[^\n]*\n\};/;
 const stNew = `const st = {
   get: async k => { try { return await window.andlusAPI.get(k); } catch(e){ console.error(e); return null; } },
   set: async (k,v) => { try { await window.andlusAPI.set(k,v); } catch(e){ console.error(e); } },
   getShared: async k => { try { return await window.andlusAPI.getShared(k); } catch(e){ console.error(e); return null; } },
   setShared: async (k,v) => { try { await window.andlusAPI.setShared(k,v); } catch(e){ console.error(e); } },
+  forgotPassword: async (username) => { try { return await window.andlusAPI.forgotPassword(username); } catch(e){ console.error(e); return { ok:true }; } },
 };`;
 if (stOld.test(code)) { code = code.replace(stOld, stNew); report.push('✓ استُبدل تعريف st'); }
 else report.push('✗ لم يُعثر على تعريف st — راجع يدوياً');
@@ -59,6 +60,28 @@ const loginNew = `const login = async () => {
   };`;
 if (loginOld.test(code)) { code = code.replace(loginOld, loginNew); report.push('✓ رُبطت شاشة الدخول بالـ API'); }
 else report.push('⚠ لم يُطابق نمط login — راجع يدوياً');
+
+// 6) ربط تغيير كلمة المرور بالـ API (مكوّن المدير — يستخدم sha256/adminpass)
+const cpAdminOld = /const submit = async \(\) => \{\s*\n\s*setMsg\(null\);\s*\n\s*const oldHash = await sha256Hex\(oldP\);[\s\S]*?catch\(e\) \{ setMsg\(\{t:"خطأ في الحفظ، حاول مجدداً",c:"#EF4444"\}\); \}\s*\n\s*\};/;
+const cpNew = `const submit = async () => {
+  setMsg(null);
+  if (newP.length < 6) { setMsg({t:"كلمة المرور الجديدة يجب ألا تقل عن 6 أحرف",c:"#EF4444"}); return; }
+  if (newP !== confirmP) { setMsg({t:"تأكيد كلمة المرور غير مطابق",c:"#EF4444"}); return; }
+  if (newP === oldP) { setMsg({t:"كلمة المرور الجديدة مطابقة للحالية",c:"#F59E0B"}); return; }
+  try {
+    await window.andlusAPI.auth.changePassword(oldP, newP);
+    setMsg({t:"✓ تم تغيير كلمة المرور بنجاح",c:"#10B981"});
+    setOldP(""); setNewP(""); setConfirmP("");
+    setTimeout(()=>{ setOpen(false); setMsg(null); }, 1400);
+  } catch(e) { setMsg({t: e.message || "كلمة المرور الحالية غير صحيحة", c:"#EF4444"}); }
+  };`;
+if (cpAdminOld.test(code)) { code = code.replace(cpAdminOld, cpNew); report.push('✓ رُبط تغيير كلمة مرور المدير بالـ API'); }
+else report.push('⚠ لم يُطابق نمط تغيير كلمة مرور المدير');
+
+// 7) ربط تغيير كلمة المرور بالـ API (مكوّن المستخدمين — يستخدم currentPassword)
+const cpUserOld = /const submit = async \(\) => \{\s*\n\s*setMsg\(null\);\s*\n\s*if \(oldP !== currentPassword\)[\s\S]*?catch\(e\) \{ setMsg\(\{t:"خطأ في الحفظ، حاول مجدداً",c:"#EF4444"\}\); \}\s*\n\s*\};/;
+if (cpUserOld.test(code)) { code = code.replace(cpUserOld, cpNew); report.push('✓ رُبط تغيير كلمة مرور المستخدمين بالـ API'); }
+else report.push('⚠ لم يُطابق نمط تغيير كلمة مرور المستخدمين');
 
 fs.writeFileSync(outPath, code, 'utf8');
 console.log('\n'.padEnd(2) + 'تقرير التحويل:');

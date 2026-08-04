@@ -37,6 +37,15 @@
     logout() { TOKEN = null; localStorage.removeItem('andlus_token'); },
     isLoggedIn() { return !!TOKEN; },
     async me() { return (await call('GET', '/auth/me')).user; },
+    async changePassword(currentPassword, newPassword) {
+      return await call('POST', '/auth/change-password', { currentPassword, newPassword });
+    },
+    async forgotPassword(username) {
+      return await call('POST', '/auth/forgot-password', { username });
+    },
+    async resetPassword(token, newPassword) {
+      return await call('POST', '/auth/reset-password', { token, newPassword });
+    },
   };
 
   // ─── تحويل مفاتيح st إلى نداءات API ───
@@ -83,6 +92,7 @@
       case 'intcourses_360c': return (await call('GET', '/courses')).courses;
       case 'locks_360c': return (await call('GET', '/evals/locks')).locks;
       case 'readings_360c': return (await call('GET', '/readings')).readings;
+      case 'acctRequests_360c': return await direct.listAccountRequests();
       default: return null;
     }
   }
@@ -100,6 +110,23 @@
         return;
       case 'twiceeval_360c':
         return void await call('POST', '/twice', { list: value });
+      case 'acctRequests_360c': {
+        // الواجهة تكتب المصفوفة كاملة؛ نقارنها بحالة الخادم ونستدعي النقطة المناسبة.
+        const server = await direct.listAccountRequests();
+        const byId = {}; server.forEach(r => { byId[r.id] = r; });
+        for (const r of (value || [])) {
+          const prev = byId[r.id];
+          if (!prev) {
+            // طلب جديد
+            if (r.status === 'pending') await direct.createAccountRequest(r);
+          } else if (prev.status === 'pending' && r.status !== prev.status) {
+            // حُسم الطلب
+            if (r.status === 'approved') await direct.approveAccountRequest(r.id);
+            else if (r.status === 'rejected') await direct.rejectAccountRequest(r.id, r.rejectNote || '');
+          }
+        }
+        return;
+      }
       default:
         // المفاتيح المعقّدة (evals/idps/impact) تُحفظ عبر دوال api.* المباشرة
         console.warn('[api] set(' + key + ') يُفضّل استخدام دالة API مباشرة');
@@ -112,7 +139,7 @@
     const map = {
       customComps_360c: 'comps', customJobs_360c: 'jobs',
       customSources_360c: 'sources', customSourceMap_360c: 'sourceMap',
-      customWeights_360c: 'weights',
+      customWeights_360c: 'weights', compRoleItems_360c: 'compRoleItems',
     };
     const skey = map[key]; if (!skey) return null;
     const { settings } = await call('GET', '/settings');
@@ -122,7 +149,7 @@
     const map = {
       customComps_360c: 'comps', customJobs_360c: 'jobs',
       customSources_360c: 'sources', customSourceMap_360c: 'sourceMap',
-      customWeights_360c: 'weights',
+      customWeights_360c: 'weights', compRoleItems_360c: 'compRoleItems',
     };
     const skey = map[key]; if (!skey) return;
     await call('POST', '/settings', { key: skey, value });
@@ -148,12 +175,17 @@
     setEditRequest: (b) => call('POST', '/edit-requests', b),
     setCourse: (b) => call('POST', '/courses', b),
     setReading: (key) => call('POST', '/readings', { key }),
+    // ج-1: طلبات فتح الحسابات
+    listAccountRequests: async () => (await call('GET', '/account-requests')).requests,
+    createAccountRequest: (b) => call('POST', '/account-requests', b),
+    approveAccountRequest: (id) => call('POST', '/account-requests/' + id + '/approve'),
+    rejectAccountRequest: (id, note) => call('POST', '/account-requests/' + id + '/reject', { note }),
   };
 
   function mapUserToClient(u) {
     return {
       id: u.id, username: u.username, name: u.name, nationalId: u.national_id,
-      role: u.role, job: u.job, branch: u.branch, stage: u.stage,
+      role: u.role, roleSubtype: u.roleSubtype || u.role_subtype || null, job: u.job, branch: u.branch, stage: u.stage,
       supervisorType: u.supervisor_type, supervisorId: u.supervisor_id,
       stageManagerId: u.stage_manager_id,
       branches: u.branches || [], stages: u.stages || [], peerIds: u.peerIds || [],

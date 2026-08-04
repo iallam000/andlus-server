@@ -14,30 +14,38 @@ function getEmployeeEval(req, res) {
   const empId = req.params.employeeId;
   const rows = db.prepare('SELECT party, rater_id, comp_key, item_index, score FROM eval_scores WHERE employee_id = ?').all(empId);
 
-  const result = { self:{}, peer:{}, supervisor:{}, stage_mgr:{} };
-  const peerRaters = {};   // { raterId: { comp: {idx:score} } }
+  const result = { self:{}, peer:{}, supervisor:{}, stage_mgr:{}, subordinate:{}, beneficiary:{} };
+  // الأطراف مجهولة الهوية (متعددة المُقيّمين): تُجمَّع تحت المُقيّم لحساب المتوسط
+  const ANON = ['peer','subordinate','beneficiary'];
+  const raters = { peer:{}, subordinate:{}, beneficiary:{} };  // { party: { raterId: { comp:{idx:score} } } }
 
   for (const r of rows) {
-    if (r.party === 'peer') {
-      // تُجمَّع تحت المُقيّم لحساب المتوسط لاحقاً
-      if (!peerRaters[r.rater_id]) peerRaters[r.rater_id] = {};
-      if (!peerRaters[r.rater_id][r.comp_key]) peerRaters[r.rater_id][r.comp_key] = {};
-      peerRaters[r.rater_id][r.comp_key][r.item_index] = r.score;
+    if (ANON.includes(r.party)) {
+      const R = raters[r.party];
+      if (!R[r.rater_id]) R[r.rater_id] = {};
+      if (!R[r.rater_id][r.comp_key]) R[r.rater_id][r.comp_key] = {};
+      R[r.rater_id][r.comp_key][r.item_index] = r.score;
     } else {
       if (!result[r.party][r.comp_key]) result[r.party][r.comp_key] = {};
       result[r.party][r.comp_key][r.item_index] = r.score;
     }
   }
 
-  // متوسط الزملاء لكل بند (بشرط PEER_MIN_RATERS) — يظهر للجميع دون كشف الهوية
-  result.peer = computePeerAvg(peerRaters);
+  // متوسط كل طرف مجهول لكل بند (بشرط الحد الأدنى) — يظهر للجميع دون كشف الهوية
+  ANON.forEach(p => { result[p] = computePeerAvg(raters[p]); });
 
   // التفصيل (اسم كل مُقيّم ودرجته) للمديرين فقط
   const canSeeDetail = ['stage_mgr', 'branch_mgr', 'admin'].includes(req.user.role);
   const payload = { eval: result };
-  if (canSeeDetail) payload.peerRaters = peerRaters;
-  // العدد يظهر للجميع (الموظف/الزميل يعرف كم قيّمه دون من)
-  payload.peerCount = Object.keys(peerRaters).length;
+  if (canSeeDetail) {
+    payload.peerRaters = raters.peer;
+    payload.subordinateRaters = raters.subordinate;
+    payload.beneficiaryRaters = raters.beneficiary;
+  }
+  // العدد يظهر للجميع (يعرف كم قيّمه دون من)
+  payload.peerCount = Object.keys(raters.peer).length;
+  payload.subordinateCount = Object.keys(raters.subordinate).length;
+  payload.beneficiaryCount = Object.keys(raters.beneficiary).length;
 
   res.json(payload);
 }

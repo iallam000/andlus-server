@@ -11,8 +11,8 @@ function enrichUser(u) {
   const branches = db.prepare('SELECT branch FROM user_branches WHERE user_id = ?').all(u.id).map(r => r.branch);
   const stages = db.prepare('SELECT stage FROM user_stages WHERE user_id = ?').all(u.id).map(r => r.stage);
   const peerIds = db.prepare('SELECT peer_id FROM peer_assignments WHERE employee_id = ?').all(u.id).map(r => r.peer_id);
-  const { password_hash, ...safe } = u;
-  return { ...safe, branches, stages, peerIds };
+  const { password_hash, role_subtype, ...safe } = u;
+  return { ...safe, roleSubtype: role_subtype || null, branches, stages, peerIds };
 }
 
 // GET /api/users  — كل الحسابات (للمدير)
@@ -42,11 +42,11 @@ async function create(req, res) {
 
   const tx = db.transaction(() => {
     db.prepare(`INSERT INTO users
-      (id, username, password_hash, name, national_id, role, job, branch, stage, supervisor_type, supervisor_id, stage_manager_id)
-      VALUES (@id,@username,@password_hash,@name,@national_id,@role,@job,@branch,@stage,@supervisor_type,@supervisor_id,@stage_manager_id)`)
+      (id, username, password_hash, name, national_id, role, role_subtype, job, branch, stage, supervisor_type, supervisor_id, stage_manager_id)
+      VALUES (@id,@username,@password_hash,@name,@national_id,@role,@role_subtype,@job,@branch,@stage,@supervisor_type,@supervisor_id,@stage_manager_id)`)
       .run({
         id, username: b.username, password_hash: hash, name: b.name,
-        national_id: b.nationalId || null, role: b.role, job: b.job || null,
+        national_id: b.nationalId || null, role: b.role, role_subtype: b.roleSubtype || null, job: b.job || null,
         branch: b.branch || null, stage: b.stage || null,
         supervisor_type: b.supervisorType || null,
         supervisor_id: b.supervisorId || null, stage_manager_id: b.stageManagerId || null,
@@ -72,14 +72,14 @@ async function update(req, res) {
 
   const tx = db.transaction(() => {
     db.prepare(`UPDATE users SET
-      name=@name, national_id=@national_id, role=@role, job=@job,
+      name=@name, national_id=@national_id, role=@role, role_subtype=@role_subtype, job=@job,
       branch=@branch, stage=@stage, supervisor_type=@supervisor_type,
       supervisor_id=@supervisor_id, stage_manager_id=@stage_manager_id,
       password_hash=@password_hash, updated_at=datetime('now')
       WHERE id=@id`)
       .run({
         id, name: b.name ?? u.name, national_id: b.nationalId ?? u.national_id,
-        role: b.role ?? u.role, job: b.job ?? u.job, branch: b.branch ?? u.branch,
+        role: b.role ?? u.role, role_subtype: b.roleSubtype ?? u.role_subtype, job: b.job ?? u.job, branch: b.branch ?? u.branch,
         stage: b.stage ?? u.stage, supervisor_type: b.supervisorType ?? u.supervisor_type,
         supervisor_id: b.supervisorId ?? u.supervisor_id,
         stage_manager_id: b.stageManagerId ?? u.stage_manager_id,

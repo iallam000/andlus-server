@@ -7,21 +7,23 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
 const cfg = require('./config');
-const { db, initSchema, seedDefaults } = require('./db');
+const { db, initSchema, migrate, seedDefaults } = require('./db');
 const { hashPassword } = require('./config/auth');
 
 // تهيئة قاعدة البيانات عند الإقلاع
 initSchema();
+migrate();
 seedDefaults();
 
-// بذر حساب المدير تلقائياً إن لم يكن موجود
+// بذر حساب المدير تلقائياً إن لم يكن موجود (كلمة المرور من ADMIN_PASSWORD أو الافتراضية)
 (async () => {
   const exists = db.prepare("SELECT 1 FROM users WHERE username='admin'").get();
   if (!exists) {
-    const hash = await hashPassword('Admin@123');
+    const pass = process.env.ADMIN_PASSWORD || 'Admin@123';
+    const hash = await hashPassword(pass);
     db.prepare("INSERT INTO users (id,username,password_hash,name,role) VALUES (?,?,?,?,?)")
       .run('__admin__','admin',hash,'مدير النظام','admin');
-    console.log('✓ تم إنشاء حساب المدير: admin / Admin@123');
+    console.log('✓ تم إنشاء حساب المدير: admin (غيّر كلمة المرور فوراً)');
   }
 })();
 
@@ -53,11 +55,16 @@ app.use('/api/auth/login', loginLimiter);
 // ─── المسارات ───
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/account-requests', require('./routes/accountRequests'));
 app.use('/api', require('./routes/data'));
 // اكتملت مسارات المنطق: evals, idps, impact, approvals, windows, settings...
 
 // خدمة الواجهة (React المبنية) من مجلد public
 app.use(express.static(path.join(__dirname, 'public')));
+// ج-3: صفحة إعادة تعيين كلمة المرور (يصلها الموظف عبر رابط البريد)
+app.get('/reset-password', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
+});
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'المسار غير موجود' });
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

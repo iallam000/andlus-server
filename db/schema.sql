@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash   TEXT NOT NULL,             -- bcrypt hash (لا نص صريح إطلاقاً)
   name            TEXT NOT NULL,
   national_id     TEXT,
-  role            TEXT NOT NULL CHECK(role IN ('admin','branch_mgr','stage_mgr','supervisor','employee')),
+  role            TEXT NOT NULL CHECK(role IN ('admin','exec','branch_mgr','stage_mgr','deputy','supervisor','dept_mgr','specialist','branch_ext','employee')),
+  role_subtype    TEXT,                       -- النوع الفرعي (edu/students/hr/finance...)
   job             TEXT,                       -- المسمّى الوظيفي
   branch          TEXT,                       -- الفرع الأساسي
   stage           TEXT,                       -- المرحلة الأساسية
@@ -57,7 +58,7 @@ CREATE TABLE IF NOT EXISTS peer_assignments (
 CREATE TABLE IF NOT EXISTS eval_scores (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   employee_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  party        TEXT NOT NULL CHECK(party IN ('self','peer','supervisor','stage_mgr')),
+  party        TEXT NOT NULL CHECK(party IN ('self','peer','supervisor','stage_mgr','subordinate','beneficiary')),
   rater_id     TEXT REFERENCES users(id) ON DELETE SET NULL,  -- للزملاء: من قيّم. لغيرهم NULL
   comp_key     TEXT NOT NULL,               -- اسم الجدارة
   item_index   INTEGER NOT NULL,            -- رقم البند داخل الجدارة
@@ -160,6 +161,38 @@ CREATE TABLE IF NOT EXISTS eval_windows (
   open_date    TEXT,
   close_date   TEXT
 );
+
+-- ج-3: رموز إعادة تعيين كلمة المرور (تصل عبر بريد الموظف = اسم المستخدم)
+CREATE TABLE IF NOT EXISTS password_resets (
+  token       TEXT PRIMARY KEY,           -- رمز عشوائي يُرسل في الرابط
+  user_id     TEXT REFERENCES users(id) ON DELETE CASCADE,
+  expires_at  TEXT NOT NULL,              -- ينتهي بعد ساعة
+  used        INTEGER DEFAULT 0,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pwreset_user ON password_resets(user_id);
+
+-- ج-1: طلبات فتح الحسابات (من مدير الفرع/الإدارة، يعتمدها مدير النظام)
+CREATE TABLE IF NOT EXISTS account_requests (
+  id            TEXT PRIMARY KEY,           -- uuid للطلب
+  name          TEXT NOT NULL,              -- اسم الموظف المطلوب
+  username      TEXT NOT NULL,              -- بريده الفعلي (اسم المستخدم)
+  national_id   TEXT,
+  init_password TEXT,                        -- كلمة المرور المبدئية التي حدّدها مقدّم الطلب
+  role          TEXT NOT NULL,
+  role_subtype  TEXT,
+  job           TEXT,
+  branch        TEXT,                       -- ضمن نطاق مقدّم الطلب
+  stage         TEXT,
+  status        TEXT DEFAULT 'pending',     -- pending | approved | rejected
+  requester_id  TEXT REFERENCES users(id) ON DELETE SET NULL,
+  requester_name TEXT,
+  reject_note   TEXT,
+  created_at    TEXT DEFAULT (datetime('now')),
+  decided_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_acctreq_status ON account_requests(status);
+CREATE INDEX IF NOT EXISTS idx_acctreq_branch ON account_requests(branch);
 
 -- طلبات التعديل من المتابعين الفنيين لمدير الفرع
 CREATE TABLE IF NOT EXISTS edit_requests (

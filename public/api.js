@@ -161,6 +161,7 @@
     createUser: (u) => call('POST', '/users', u),
     updateUser: (id, u) => call('PUT', '/users/' + id, u),
     deleteUser: (id) => call('DELETE', '/users/' + id),
+    setPeers: (id, peerIds) => call('PUT', '/users/' + id + '/peers', { peerIds }),
     // التقييمات
     saveEval: (empId, party, scores, witnesses) =>
       call('POST', '/evals/' + empId, { party, scores, witnesses }),

@@ -93,6 +93,20 @@ async function update(req, res) {
   res.json({ user: enrichUser(db.prepare('SELECT * FROM users WHERE id=?').get(id)) });
 }
 
+// PUT /api/users/:id/peers — تعيين زملاء التقييم (للمقيّمين/مدراء الفروع)
+function assignPeers(req, res) {
+  const id = req.params.id;
+  const u = db.prepare('SELECT 1 FROM users WHERE id = ?').get(id);
+  if (!u) return res.status(404).json({ error: 'المستخدم غير موجود' });
+  const peerIds = Array.isArray(req.body.peerIds) ? req.body.peerIds : [];
+  db.prepare('DELETE FROM peer_assignments WHERE employee_id=?').run(id);
+  const ins = db.prepare('INSERT OR IGNORE INTO peer_assignments (employee_id,peer_id) VALUES (?,?)');
+  peerIds.forEach(pid => pid && ins.run(id, pid));
+  db.prepare('INSERT INTO audit_log (user_id, action, detail, ip) VALUES (?,?,?,?)')
+    .run(req.user.id, 'assign_peers', id, req.ip);
+  res.json({ ok: true });
+}
+
 // DELETE /api/users/:id
 function remove(req, res) {
   const id = req.params.id;
@@ -123,4 +137,4 @@ function syncMulti(id, b) {
   }
 }
 
-module.exports = { list, getOne, create, update, remove };
+module.exports = { list, getOne, create, update, remove, assignPeers };

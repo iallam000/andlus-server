@@ -13,4 +13,7 @@ router.post('/', requireAuth, requireRole('admin'), ctrl.create);
 router.put('/:id', requireAuth, requireRole('admin'), ctrl.update);
 router.delete('/:id', requireAuth, requireRole('admin'), ctrl.remove);
 
+// تعيين زملاء التقييم — لكل مستخدم مُصادَق عليه (مدراء/متابعون/موظفون)
+router.put('/:id/peers', requireAuth, ctrl.assignPeers);
+
 module.exports = router;

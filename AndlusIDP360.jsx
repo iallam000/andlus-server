@@ -3543,7 +3543,11 @@ function AdminPanel({ onLogout }) {
   const addUser = async () => {
   if (!form.name||!form.username||!form.password||!form.branch) return;
   if ((users||[]).find(u=>u.username===form.username)) { showToast("اسم المستخدم موجود","#EF4444"); return; }
-  await persistUsers([...(users||[]),{...form,id:Date.now().toString()}]);
+  const newUser = {...form,id:Date.now().toString(),peerIds:form.peerIds||(form.peerId?[form.peerId]:[])};
+  try {
+   if (typeof window.andlusAPI?.createUser === "function") await window.andlusAPI.createUser(newUser);
+   await persistUsers([...(users||[]),newUser]);
+  } catch(e){ showToast("تعذّر إنشاء الحساب: "+(e?.message||"خطأ"),"#EF4444"); return; }
   setForm({name:"",username:"",password:"",role:"employee",job:"",branch:"",stage:"",nationalId:"",supervisorId:"",stageManagerId:"",peerId:""});
   showToast("✓ تم إنشاء الحساب");
   };
@@ -3552,7 +3556,10 @@ function AdminPanel({ onLogout }) {
   if ((users||[]).find(u=>u.username===req.username)) { showToast("اسم المستخدم أصبح مستخدماً","#EF4444"); return; }
   const initPass = req.password || "123456";
   const newUser = { id:Date.now().toString(), name:req.name, username:req.username, password:initPass, nationalId:req.nationalId||"", role:req.role, roleSubtype:req.roleSubtype||"", job:req.job||"", branch:req.branch||"", stage:req.stage||"" };
-  await persistUsers([...(users||[]),newUser]);
+  try {
+   if (typeof window.andlusAPI?.createUser === "function") await window.andlusAPI.createUser(newUser);
+   await persistUsers([...(users||[]),newUser]);
+  } catch(e){ showToast("تعذّر إنشاء الحساب: "+(e?.message||"خطأ"),"#EF4444"); return; }
   const nr = acctRequests.map(r=>r.id===req.id?{...r,status:"approved",decidedAt:new Date().toISOString().split("T")[0]}:r);
   setAcctRequests(nr); await st.set("acctRequests_360c",nr);
   showToast("✅ اعتُمد الطلب وأُنشئ الحساب");
@@ -3991,7 +3998,7 @@ function AdminPanel({ onLogout }) {
    </div>
    <div style={{display:"flex",gap:10,marginTop:18}}>
    <button onClick={()=>setEditUser(null)} style={{flex:1,padding:"10px",borderRadius:10,border:"1px solid #DDE9F5",background:"transparent",color:"#5B7A9E",cursor:"pointer"}}>إلغاء</button>
-   <button onClick={async()=>{await persistUsers((users||[]).map(u=>u.id===editUser.id?editUser:u));setEditUser(null);showToast("✓ تم التحديث");}}
+   <button onClick={async()=>{try{if (typeof window.andlusAPI?.updateUser === "function") await window.andlusAPI.updateUser(editUser.id, editUser);await persistUsers((users||[]).map(u=>u.id===editUser.id?editUser:u));}catch(e){showToast("تعذّر الحفظ: "+(e?.message||"خطأ"),"#EF4444");return;}setEditUser(null);showToast("✓ تم التحديث");}}
   style={{flex:2,padding:"10px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#1D5A8A,#2E7FB8)",color:"#fff",fontWeight:700,cursor:"pointer"}}>حفظ</button>
    </div>
   </div>
@@ -4006,7 +4013,7 @@ function AdminPanel({ onLogout }) {
    <div style={{color:"#5B7A9E",fontSize:13,marginBottom:22}}>سيُحذف حساب <span style={{color:"#EF4444"}}>{delConfirm.name}</span> نهائياً</div>
    <div style={{display:"flex",gap:10}}>
    <button onClick={()=>setDelConfirm(null)} style={{flex:1,padding:"10px",borderRadius:10,border:"1px solid #DDE9F5",background:"transparent",color:"#5B7A9E",cursor:"pointer"}}>إلغاء</button>
-   <button onClick={async()=>{await persistUsers((users||[]).filter(u=>u.id!==delConfirm.id));const ne={...evals};delete ne[delConfirm.id];setEvalsState(ne);await st.set("evals_360c",ne);setDelConfirm(null);showToast("تم الحذف","#EF4444");}}
+   <button onClick={async()=>{try{if (typeof window.andlusAPI?.deleteUser === "function") await window.andlusAPI.deleteUser(delConfirm.id);await persistUsers((users||[]).filter(u=>u.id!==delConfirm.id));}catch(e){showToast("تعذّر الحذف: "+(e?.message||"خطأ"),"#EF4444");return;}const ne={...evals};delete ne[delConfirm.id];setEvalsState(ne);await st.set("evals_360c",ne);setDelConfirm(null);showToast("تم الحذف","#EF4444");}}
   style={{flex:1,padding:"10px",borderRadius:10,border:"none",background:"#EF4444",color:"#fff",fontWeight:700,cursor:"pointer"}}>حذف</button>
    </div>
   </div>
@@ -4756,7 +4763,11 @@ function EvaluatorPanel({ user, partyKey, onLogout }) {
 
   const assignPeer = async (empId, peerIds) => {
   const nu = (users||[]).map(u=>u.id===empId?{...u,peerIds,peerId:undefined}:u);
-  setUsersState(nu); await st.set("users_360c",nu);
+  setUsersState(nu);
+  try {
+   if (typeof window.andlusAPI?.setPeers === "function") { await window.andlusAPI.setPeers(empId, peerIds); }
+   else { await st.set("users_360c",nu); }
+  } catch(e){ showToast("تعذّر حفظ الزملاء","#EF4444"); }
   setPeerAssign(pa=>pa&&pa.id===empId?{...pa,peerIds}:pa);
   };
 

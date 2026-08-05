@@ -10,26 +10,6 @@
 let transporter = null;
 let nodemailer = null;
 
-// تشخيص اتصال SMTP من بيئة التشغيل (يُفعَّل بمتغير SMTP_DIAG=1)
-function runSMTPDiagnostics() {
-  const net = require('net');
-  const targets = [
-    ['smtp.office365.com', 587],
-    ['smtp.office365.com', 465],
-    ['smtp.office365.com', 25],
-    ['outlook.office365.com', 587],
-    ['smtp.gmail.com', 587],
-  ];
-  console.log('🔍 تشخيص اتصال SMTP (مهلة 10 ثوانٍ لكل هدف)...');
-  targets.forEach(([h, p]) => {
-    const s = net.connect({ host: h, port: p, timeout: 10000 });
-    s.on('connect', () => { console.log(`   ✅ ${h}:${p} — متاح`); s.destroy(); });
-    s.on('timeout', () => { console.log(`   ⏱️ ${h}:${p} — مهلة (غير متاح)`); s.destroy(); });
-    s.on('error', (e) => { console.log(`   ❌ ${h}:${p} — ${e.code || e.message}`); });
-  });
-}
-if (process.env.SMTP_DIAG === '1') runSMTPDiagnostics();
-
 function initTransporter() {
   if (transporter !== null) return transporter;
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;

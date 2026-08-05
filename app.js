@@ -65,6 +65,20 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/reset-password', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
 });
+// [صيانة مؤقتة — تُزال بعد التنفيذ] إعادة تسمية username في قاعدة الإنتاج (محمية بمفتاح MAINTAIN_KEY)
+app.post('/__maintain/rename-username', (req, res) => {
+  if (!process.env.MAINTAIN_KEY || req.get('x-maintain-key') !== process.env.MAINTAIN_KEY) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  const { from, to } = req.body || {};
+  if (!from || !to) return res.status(400).json({ error: 'from/to required' });
+  const u = db.prepare('SELECT id, username FROM users WHERE username = ?').get(from);
+  if (!u) return res.status(404).json({ error: 'not found: ' + from });
+  const ex = db.prepare('SELECT 1 FROM users WHERE username = ?').get(to);
+  if (ex) return res.status(409).json({ error: 'target exists: ' + to });
+  db.prepare('UPDATE users SET username = ?, updated_at = datetime(\'now\') WHERE id = ?').run(to, u.id);
+  res.json({ ok: true, renamed: `${from} -> ${to}` });
+});
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'المسار غير موجود' });
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

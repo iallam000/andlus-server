@@ -33,10 +33,12 @@ const initSharedData = async () => {
 
 
 const PARTY_CATS = {
-  self:       ["أساسية","عامة","فنية"],
-  peer:       ["أساسية"],
-  supervisor: ["عامة","فنية"],
-  stage_mgr:  ["أساسية"],
+  self:        ["أساسية","عامة","فنية"],
+  peer:        ["أساسية"],
+  supervisor:  ["عامة","فنية"],
+  stage_mgr:   ["أساسية"],
+  subordinate: ["عامة"],      // المرؤوسون يقيّمون رئيسهم (بنود عامة يحدّدها مدير النظام)
+  beneficiary: ["عامة"],      // المستفيدون من الخدمة (بنود عامة)
 };
 
 const DEFAULT_WEIGHTS = {
@@ -1631,6 +1633,7 @@ function CompetenciesEditor({ comps, jobs, onSaveComps, onSaveJobs, onReset, rol
 }
 
 function ResultsReadingSection({ targetUser, currentUser, readings, onSave }) {
+  if (!currentUser || !targetUser) return null;
   const empReadings = (readings||{})[targetUser.id] || [];
   const alreadyRead = empReadings.find(r => r.readerId === currentUser.id);
 
@@ -2320,7 +2323,11 @@ function RequestAccountForm({ user, onSubmit }) {
    {subtypes.map(([k,v])=><option key={k} value={k}>{v}</option>)}
    </select></div>
    )}
-   {!scopeIsDept&&<div><label style={lS}>المرحلة</label><input value={f.stage} onChange={e=>set("stage",e.target.value)} placeholder="ابتدائي/متوسط..." style={iS}/></div>}
+    {!scopeIsDept&&<div><label style={lS}>المرحلة</label>
+    <select value={f.stage} onChange={e=>set("stage",e.target.value)} style={iS}>
+    <option value="">— اختر المرحلة —</option>
+    {STAGES.map(s=><option key={s} value={s}>{s}</option>)}
+    </select></div>}
    <div><label style={lS}>{scopeWord} *</label>
    {myBranches.length>1
    ? <select value={f.branch} onChange={e=>set("branch",e.target.value)} style={iS}>{myBranches.map(b=><option key={b} value={b}>{b}</option>)}</select>
@@ -2380,7 +2387,8 @@ function BranchManagerPanel({ user, onLogout }) {
   },[]);
 
   const myBranches = scopeBranches(user);
-  const branchEmps = (users||[]).filter(u=>u.role==="employee" && myBranches.includes(u.branch));
+  // متابعة مدير الفرع تشمل: الموظفين + مدراء المراحل والوكلاء التابعين لفروعه (لتقييمهم ومتابعة نتائجهم)
+  const branchEmps = (users||[]).filter(u=>["employee","stage_mgr","deputy"].includes(u.role) && myBranches.includes(u.branch));
   const brStagePairs = [];
   myBranches.forEach(br=>{
   const st2 = [...new Set(branchEmps.filter(u=>u.branch===br).map(u=>u.stage).filter(Boolean))].sort();
@@ -3554,15 +3562,21 @@ function AdminPanel({ onLogout }) {
   // ج-1: اعتماد الطلب → إنشاء الحساب بكلمة المرور المبدئية التي أدخلها مقدّم الطلب
   const approveAcctReq = async (req) => {
   if ((users||[]).find(u=>u.username===req.username)) { showToast("اسم المستخدم أصبح مستخدماً","#EF4444"); return; }
-  const initPass = req.password || "123456";
-  const newUser = { id:Date.now().toString(), name:req.name, username:req.username, password:initPass, nationalId:req.nationalId||"", role:req.role, roleSubtype:req.roleSubtype||"", job:req.job||"", branch:req.branch||"", stage:req.stage||"" };
-  try {
-   if (typeof window.andlusAPI?.createUser === "function") await window.andlusAPI.createUser(newUser);
-   await persistUsers([...(users||[]),newUser]);
-  } catch(e){ showToast("تعذّر إنشاء الحساب: "+(e?.message||"خطأ"),"#EF4444"); return; }
+  // نحدّث حالة الطلب فقط؛ الخادم (عبر approveAccountRequest) يُنشئ الحساب ويحدّث الحالة في معاملة واحدة.
+  // (لا نُنشئ المستخدم هنا مباشرةً حتى لا يتعارض مع فحص "اسم المستخدم مستخدم" على الخادم فيبقى الطلب معلّقاً.)
   const nr = acctRequests.map(r=>r.id===req.id?{...r,status:"approved",decidedAt:new Date().toISOString().split("T")[0]}:r);
-  setAcctRequests(nr); await st.set("acctRequests_360c",nr);
-  showToast("✅ اعتُمد الطلب وأُنشئ الحساب");
+  try {
+   setAcctRequests(nr);
+   await st.set("acctRequests_360c",nr);   // يستدعي approveAccountRequest على الخادم
+   // نعيد قراءة المستخدمين والطلبات من الخادم لتُحدَّث الحالة فعلياً
+   const [freshUsers, freshReqs] = await Promise.all([st.get("users_360c"), st.get("acctRequests_360c").catch(()=>nr)]);
+   if (freshUsers) setUsersState(freshUsers);
+   if (Array.isArray(freshReqs)) setAcctRequests(freshReqs);
+   showToast("✅ اعتُمد الطلب وأُنشئ الحساب");
+  } catch(e){
+   setAcctRequests(acctRequests); // تراجع
+   showToast("تعذّر اعتماد الطلب: "+(e?.message||"خطأ"),"#EF4444");
+  }
   };
   const rejectAcctReq = async (req) => {
   const note = typeof prompt!=="undefined" ? prompt("سبب الرفض (اختياري):","") : "";
@@ -5711,7 +5725,9 @@ function EmployeePanel({ user, onLogout }) {
 
   useEffect(()=>{
   Promise.all([st.get("users_360c"),st.get("evals_360c"),st.get("idps_360c"),st.get("evalwindow_360c"),st.get("readings_360c"),st.get("locks_360c"),st.get("approvals_360c"),st.get("impact_360c")]).then(([u,e,i,w,r,l,a,im])=>{
-   setUsersState(u||[]); setEvalsState(e||{}); setIdpsState(i||{}); setEvalWindowData(w||{isOpen:false}); setReadings(r||{}); setLocks(l||{}); setApprovals(a||{}); setImpactData(im||{}); setLoaded(true);
+   // نافذة التقييم تُخزَّن لكل فرع؛ نستخرج نافذة فرع هذا الموظف
+   const myWin = (w&&w.branches) ? (w.branches[user.branch]||{isOpen:false}) : (w||{isOpen:false});
+   setUsersState(u||[]); setEvalsState(e||{}); setIdpsState(i||{}); setEvalWindowData(myWin); setReadings(r||{}); setLocks(l||{}); setApprovals(a||{}); setImpactData(im||{}); setLoaded(true);
   });
   if (canReqAccounts) st.get("acctRequests_360c").then(d=>setAcctRequests(Array.isArray(d)?d:[]));
   Promise.all([st.get("round2_360c"),st.get("twiceeval_360c")]).then(([r2,tw])=>setRound2Ctx(r2?.open,tw||[])); // ب-4

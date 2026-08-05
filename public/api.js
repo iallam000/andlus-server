@@ -58,21 +58,23 @@
         return users.map(mapUserToClient);
       }
       case 'evals_360c': {
-        // نبني كائن { empId: { self, peer, ... , peerRaters } } لكل الموظفين
         const { users } = await call('GET', '/users');
         const out = {};
         for (const u of users) {
-          if (u.role !== 'employee') continue;
+          // نجلب تقييمات كل من يُقيَّم (الموظف والقياديون والتخصصيون) — لا الموظف وحده
+          if (u.role === 'admin') continue;
           const d = await call('GET', '/evals/' + u.id);
           out[u.id] = { ...d.eval };
           if (d.peerRaters) out[u.id].peerRaters = d.peerRaters;
+          if (d.subordinateRaters) out[u.id].subordinateRaters = d.subordinateRaters;
+          if (d.beneficiaryRaters) out[u.id].beneficiaryRaters = d.beneficiaryRaters;
           out[u.id].__peerCount = d.peerCount;
         }
+        _snap.evals = _clone(out);
         return out;
       }
       case 'idps_360c': {
         const { idps } = await call('GET', '/idps');
-        // نحوّل لصيغة { empId: { approved, plan:[...] } }
         const out = {};
         for (const [id, v] of Object.entries(idps)) {
           out[id] = {
@@ -80,18 +82,21 @@
             needsBranchApproval: !!v.needs_branch_approval, branchApprovedAt: v.branch_approved_at,
             editUnlocked: !!v.edit_unlocked, editUnlockedRow: v.edit_unlocked_row,
             plan: v.plan || [],
+            certificate: v.certificate ? (typeof v.certificate === 'string' ? JSON.parse(v.certificate) : v.certificate) : undefined,
           };
         }
+        _snap.idps = _clone(out);
         return out;
       }
-      case 'impact_360c': return (await call('GET', '/impact')).impact;
-      case 'approvals_360c': return (await call('GET', '/approvals')).approvals;
+      case 'impact_360c': { const d=(await call('GET', '/impact')).impact; _snap.impact=_clone(d); return d; }
+      case 'approvals_360c': { const d=(await call('GET', '/approvals')).approvals; _snap.approvals=_clone(d); return d; }
       case 'evalwindow_360c': return await call('GET', '/windows');
       case 'editreq_360c': return (await call('GET', '/edit-requests')).editRequests;
       case 'twiceeval_360c': return (await call('GET', '/twice')).twice;
+      case 'round2_360c': return await call('GET', '/round2').catch(()=>null);
       case 'intcourses_360c': return (await call('GET', '/courses')).courses;
       case 'locks_360c': return (await call('GET', '/evals/locks')).locks;
-      case 'readings_360c': return (await call('GET', '/readings')).readings;
+      case 'readings_360c': { const d=(await call('GET', '/readings')).readings; _snap.readings=_clone(d); return d; }
       case 'acctRequests_360c': return await direct.listAccountRequests();
       default: return null;
     }
@@ -100,38 +105,133 @@
   // الكتابة: تُترجم إلى نداء API المناسب.
   // ملاحظة: الواجهة القديمة تكتب الكائن كاملاً؛ نحن نرسل ما يلزم فقط.
   // لتقليل التعديل، نوفّر دوالّ مباشرة أدق (setX) تُستدعى من الواجهة المعدّلة.
+  // لقطات لآخر حالة قُرئت من الخادم (للمقارنة عند الكتابة)
+  const _snap = { evals:{}, idps:{}, impact:{}, approvals:{}, readings:{} };
+  const _clone = (o) => JSON.parse(JSON.stringify(o||{}));
+
   async function set(key, value) {
-    // للحفاظ على التوافق: بعض المفاتيح تُكتب ككل. نتعامل مع الأهم.
     switch (key) {
       case 'evalwindow_360c':
-        // value = { branches: { br: {isOpen,openDate,closeDate} } }
         for (const [br, w] of Object.entries(value.branches || {}))
           await call('POST', '/windows', { branch: br, ...w });
         return;
       case 'twiceeval_360c':
         return void await call('POST', '/twice', { list: value });
+      case 'round2_360c':
+        return void await call('POST', '/round2', value).catch(()=>{});
       case 'acctRequests_360c': {
-        // الواجهة تكتب المصفوفة كاملة؛ نقارنها بحالة الخادم ونستدعي النقطة المناسبة.
         const server = await direct.listAccountRequests();
         const byId = {}; server.forEach(r => { byId[r.id] = r; });
         for (const r of (value || [])) {
           const prev = byId[r.id];
-          if (!prev) {
-            // طلب جديد
-            if (r.status === 'pending') await direct.createAccountRequest(r);
-          } else if (prev.status === 'pending' && r.status !== prev.status) {
-            // حُسم الطلب
+          if (!prev) { if (r.status === 'pending') await direct.createAccountRequest(r); }
+          else if (prev.status === 'pending' && r.status !== prev.status) {
             if (r.status === 'approved') await direct.approveAccountRequest(r.id);
             else if (r.status === 'rejected') await direct.rejectAccountRequest(r.id, r.rejectNote || '');
           }
         }
         return;
       }
+      case 'evals_360c':
+        return void await saveEvalsDiff(value);
+      case 'idps_360c':
+        return void await saveIdpsDiff(value);
+      case 'impact_360c':
+        return void await saveImpactDiff(value);
+      case 'approvals_360c':
+        return void await saveApprovalsDiff(value);
+      case 'readings_360c':
+        return void await saveReadingsDiff(value);
+      case 'locks_360c':
+        return; // الأقفال تُدار عبر lockEval المباشرة عند الحفظ النهائي
       default:
-        // المفاتيح المعقّدة (evals/idps/impact) تُحفظ عبر دوال api.* المباشرة
-        console.warn('[api] set(' + key + ') يُفضّل استخدام دالة API مباشرة');
+        console.warn('[api] set(' + key + ') غير مربوط');
         return;
     }
+  }
+
+  // مقارنة كائن الدرجات لطرف معيّن (هل تغيّر؟)
+  const _jsonEq = (a, b) => JSON.stringify(a || {}) === JSON.stringify(b || {});
+
+  // حفظ التقييمات: نرسل فقط (موظف/طرف/جولة) الذي تغيّر
+  async function saveEvalsDiff(nv) {
+    nv = nv || {};
+    for (const empId of Object.keys(nv)) {
+      const cur = nv[empId] || {};
+      const old = _snap.evals[empId] || {};
+      // الجولة الأولى: الأطراف المباشرة (self/supervisor/stage_mgr) + المجهولة عبر بصمة المُقيّم
+      const parties = ['self', 'supervisor', 'stage_mgr'];
+      for (const p of parties) {
+        if (!_jsonEq(cur[p], old[p]) && cur[p] && Object.keys(cur[p]).length)
+          await direct.saveEval(empId, p, cur[p], 1);
+      }
+      // الأطراف المجهولة (peer/subordinate/beneficiary): تُحفظ ببصمة المُقيّم الحالي فقط
+      for (const p of ['peer', 'subordinate', 'beneficiary']) {
+        const rk = p + 'Raters';
+        const curMine = (cur[rk] || {})[_meId()];
+        const oldMine = (old[rk] || {})[_meId()];
+        if (curMine && !_jsonEq(curMine, oldMine) && Object.keys(curMine).length)
+          await direct.saveEval(empId, p, curMine, 1);
+      }
+      // الجولة الثانية (__r2)
+      if (cur.__r2) {
+        const o2 = old.__r2 || {};
+        for (const p of parties) {
+          if (!_jsonEq(cur.__r2[p], o2[p]) && cur.__r2[p] && Object.keys(cur.__r2[p]).length)
+            await direct.saveEval(empId, p, cur.__r2[p], 2);
+        }
+        for (const p of ['peer', 'subordinate', 'beneficiary']) {
+          const rk = p + 'Raters';
+          const curMine = ((cur.__r2[rk]) || {})[_meId()];
+          const oldMine = ((o2[rk]) || {})[_meId()];
+          if (curMine && !_jsonEq(curMine, oldMine) && Object.keys(curMine).length)
+            await direct.saveEval(empId, p, curMine, 2);
+        }
+      }
+    }
+    _snap.evals = _clone(nv);
+  }
+
+  async function saveIdpsDiff(nv) {
+    nv = nv || {};
+    for (const empId of Object.keys(nv)) {
+      if (!_jsonEq(nv[empId], _snap.idps[empId]))
+        await direct.saveIdp(empId, nv[empId]);
+    }
+    _snap.idps = _clone(nv);
+  }
+
+  async function saveImpactDiff(nv) {
+    nv = nv || {};
+    for (const k of Object.keys(nv)) {
+      if (!_jsonEq(nv[k], _snap.impact[k])) {
+        const [empId, rowId] = k.split('__');
+        if (empId && rowId) await direct.saveImpact(empId, rowId, nv[k]);
+      }
+    }
+    _snap.impact = _clone(nv);
+  }
+
+  async function saveApprovalsDiff(nv) {
+    nv = nv || {};
+    for (const k of Object.keys(nv)) {
+      if (!_jsonEq(nv[k], _snap.approvals[k]))
+        await direct.setApproval(k, !!(nv[k] && nv[k].approved));
+    }
+    _snap.approvals = _clone(nv);
+  }
+
+  async function saveReadingsDiff(nv) {
+    nv = nv || {};
+    for (const k of Object.keys(nv)) {
+      if (nv[k] && !_snap.readings[k]) await direct.setReading(k);
+    }
+    _snap.readings = _clone(nv);
+  }
+
+  // معرّف المستخدم الحالي (من الرمز) — للأطراف المجهولة
+  function _meId() {
+    try { return JSON.parse(atob(TOKEN.split('.')[1])).id; } catch { return null; }
   }
 
   // ─── الإعدادات المشتركة ───
@@ -140,6 +240,7 @@
       customComps_360c: 'comps', customJobs_360c: 'jobs',
       customSources_360c: 'sources', customSourceMap_360c: 'sourceMap',
       customWeights_360c: 'weights', compRoleItems_360c: 'compRoleItems',
+      profCerts_360c: 'profCerts',
     };
     const skey = map[key]; if (!skey) return null;
     const { settings } = await call('GET', '/settings');
@@ -150,6 +251,7 @@
       customComps_360c: 'comps', customJobs_360c: 'jobs',
       customSources_360c: 'sources', customSourceMap_360c: 'sourceMap',
       customWeights_360c: 'weights', compRoleItems_360c: 'compRoleItems',
+      profCerts_360c: 'profCerts',
     };
     const skey = map[key]; if (!skey) return;
     await call('POST', '/settings', { key: skey, value });
@@ -163,8 +265,8 @@
     deleteUser: (id) => call('DELETE', '/users/' + id),
     setPeers: (id, peerIds) => call('PUT', '/users/' + id + '/peers', { peerIds }),
     // التقييمات
-    saveEval: (empId, party, scores, witnesses) =>
-      call('POST', '/evals/' + empId, { party, scores, witnesses }),
+    saveEval: (empId, party, scores, round, witnesses) =>
+      call('POST', '/evals/' + empId, { party, scores, round: round || 1, witnesses: witnesses || {} }),
     lockEval: (empId, party) => call('POST', '/evals/' + empId + '/lock', { party }),
     getEval: (empId) => call('GET', '/evals/' + empId),
     // الخطط

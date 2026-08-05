@@ -60,11 +60,12 @@ CREATE TABLE IF NOT EXISTS eval_scores (
   employee_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   party        TEXT NOT NULL CHECK(party IN ('self','peer','supervisor','stage_mgr','subordinate','beneficiary')),
   rater_id     TEXT REFERENCES users(id) ON DELETE SET NULL,  -- للزملاء: من قيّم. لغيرهم NULL
+  round        INTEGER NOT NULL DEFAULT 1,   -- ب-4: 1=التقييم الأول، 2=التقييم الثاني
   comp_key     TEXT NOT NULL,               -- اسم الجدارة
   item_index   INTEGER NOT NULL,            -- رقم البند داخل الجدارة
   score        REAL NOT NULL CHECK(score >= 0 AND score <= 5),
   updated_at   TEXT DEFAULT (datetime('now')),
-  UNIQUE(employee_id, party, rater_id, comp_key, item_index)
+  UNIQUE(employee_id, party, rater_id, round, comp_key, item_index)
 );
 CREATE INDEX IF NOT EXISTS idx_eval_emp   ON eval_scores(employee_id);
 CREATE INDEX IF NOT EXISTS idx_eval_party ON eval_scores(employee_id, party);
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS idps (
   branch_approved_at    TEXT,
   edit_unlocked         INTEGER DEFAULT 0,
   edit_unlocked_row     TEXT,
+  certificate           TEXT,                -- د-9: الشهادة الاحترافية (JSON)
   updated_at            TEXT DEFAULT (datetime('now'))
 );
 

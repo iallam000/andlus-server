@@ -43,6 +43,28 @@ function migrate() {
   if (!evalSql.includes('subordinate')) {
     rebuildEvalScores();
     console.log('✓ أُعيد بناء جدول eval_scores بالقيود الجديدة');
+  } else {
+    // الجدول يقبل الأطراف الجديدة لكن قد ينقصه عمود round (ب-4) → نعيد بناءه لإضافته
+    const scoreCols = db.prepare('PRAGMA table_info(eval_scores)').all().map(c => c.name);
+    if (!scoreCols.includes('round')) {
+      rebuildEvalScores();
+      console.log('✓ أُضيف عمود round إلى eval_scores');
+    }
+  }
+  // 4) عمود certificate في جدول idps (للشهادة الاحترافية ضمن الخطة)
+  const idpCols = db.prepare('PRAGMA table_info(idps)').all().map(c => c.name);
+  if (!idpCols.includes('certificate')) {
+    db.exec('ALTER TABLE idps ADD COLUMN certificate TEXT');
+    console.log('✓ أُضيف عمود certificate إلى idps');
+  }
+  // 5) عمود init_password في account_requests (كلمة المرور المبدئية)
+  const arSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='account_requests'").get()?.sql;
+  if (arSql) {
+    const arCols = db.prepare('PRAGMA table_info(account_requests)').all().map(c => c.name);
+    if (!arCols.includes('init_password')) {
+      db.exec('ALTER TABLE account_requests ADD COLUMN init_password TEXT');
+      console.log('✓ أُضيف عمود init_password إلى account_requests');
+    }
   }
 }
 
@@ -89,20 +111,24 @@ function rebuildEvalScores() {
   const tx = db.transaction(() => {
     db.pragma('foreign_keys = OFF');
     try {
+      // نكتشف إن كان العمود round موجوداً في الجدول القديم لننقله أو نضع 1 افتراضياً
+      const oldCols = db.prepare('PRAGMA table_info(eval_scores)').all().map(c => c.name);
+      const hadRound = oldCols.includes('round');
       db.exec(`
         CREATE TABLE eval_scores_new (
           id           INTEGER PRIMARY KEY AUTOINCREMENT,
           employee_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           party        TEXT NOT NULL CHECK(party IN ('self','peer','supervisor','stage_mgr','subordinate','beneficiary')),
           rater_id     TEXT REFERENCES users(id) ON DELETE SET NULL,
+          round        INTEGER NOT NULL DEFAULT 1,
           comp_key     TEXT NOT NULL,
           item_index   INTEGER NOT NULL,
           score        REAL NOT NULL CHECK(score >= 0 AND score <= 5),
           updated_at   TEXT DEFAULT (datetime('now')),
-          UNIQUE(employee_id, party, rater_id, comp_key, item_index)
+          UNIQUE(employee_id, party, rater_id, round, comp_key, item_index)
         );
-        INSERT INTO eval_scores_new (id, employee_id, party, rater_id, comp_key, item_index, score, updated_at)
-          SELECT id, employee_id, party, rater_id, comp_key, item_index, score, updated_at FROM eval_scores;
+        INSERT INTO eval_scores_new (id, employee_id, party, rater_id, round, comp_key, item_index, score, updated_at)
+          SELECT id, employee_id, party, rater_id, ${hadRound ? 'round' : '1'}, comp_key, item_index, score, updated_at FROM eval_scores;
         DROP TABLE eval_scores;
         ALTER TABLE eval_scores_new RENAME TO eval_scores;
         CREATE INDEX IF NOT EXISTS idx_eval_emp   ON eval_scores(employee_id);

@@ -65,6 +65,15 @@ function getTwice(req, res) {
   const rows = db.prepare('SELECT employee_id FROM twice_eval').all();
   res.json({ twice: rows.map(r => r.employee_id) });
 }
+// ب-4: حالة التقييم الثاني (تُخزَّن كإعداد مشترك)
+function getRound2(req, res) {
+  const row = db.prepare("SELECT value FROM settings WHERE skey='round2'").get();
+  res.json(row ? JSON.parse(row.value) : { open: false });
+}
+function setRound2(req, res) {
+  db.prepare("INSERT OR REPLACE INTO settings (skey,value) VALUES ('round2',?)").run(JSON.stringify(req.body || { open: false }));
+  res.json({ ok: true });
+}
 function setTwice(req, res) {
   const { list } = req.body || {};
   const tx = db.transaction(() => {

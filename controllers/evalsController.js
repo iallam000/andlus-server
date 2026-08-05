@@ -12,29 +12,39 @@ const PEER_MIN_RATERS = 2;   // لا تظهر درجة الزملاء إلا ب�
 // مع peerRaters (التفصيل) فقط لمن يملك صلاحية (المديرون)
 function getEmployeeEval(req, res) {
   const empId = req.params.employeeId;
-  const rows = db.prepare('SELECT party, rater_id, comp_key, item_index, score FROM eval_scores WHERE employee_id = ?').all(empId);
+  const rows = db.prepare('SELECT party, rater_id, round, comp_key, item_index, score FROM eval_scores WHERE employee_id = ?').all(empId);
 
-  const result = { self:{}, peer:{}, supervisor:{}, stage_mgr:{}, subordinate:{}, beneficiary:{} };
-  // الأطراف مجهولة الهوية (متعددة المُقيّمين): تُجمَّع تحت المُقيّم لحساب المتوسط
   const ANON = ['peer','subordinate','beneficiary'];
-  const raters = { peer:{}, subordinate:{}, beneficiary:{} };  // { party: { raterId: { comp:{idx:score} } } }
-
-  for (const r of rows) {
-    if (ANON.includes(r.party)) {
-      const R = raters[r.party];
-      if (!R[r.rater_id]) R[r.rater_id] = {};
-      if (!R[r.rater_id][r.comp_key]) R[r.rater_id][r.comp_key] = {};
-      R[r.rater_id][r.comp_key][r.item_index] = r.score;
-    } else {
-      if (!result[r.party][r.comp_key]) result[r.party][r.comp_key] = {};
-      result[r.party][r.comp_key][r.item_index] = r.score;
+  // نبني الجولتين منفصلتين
+  const build = (roundRows) => {
+    const result = { self:{}, peer:{}, supervisor:{}, stage_mgr:{}, subordinate:{}, beneficiary:{} };
+    const raters = { peer:{}, subordinate:{}, beneficiary:{} };
+    for (const r of roundRows) {
+      if (ANON.includes(r.party)) {
+        const R = raters[r.party];
+        if (!R[r.rater_id]) R[r.rater_id] = {};
+        if (!R[r.rater_id][r.comp_key]) R[r.rater_id][r.comp_key] = {};
+        R[r.rater_id][r.comp_key][r.item_index] = r.score;
+      } else {
+        if (!result[r.party][r.comp_key]) result[r.party][r.comp_key] = {};
+        result[r.party][r.comp_key][r.item_index] = r.score;
+      }
     }
+    ANON.forEach(p => { result[p] = computePeerAvg(raters[p]); });
+    return { result, raters };
+  };
+
+  const r1 = build(rows.filter(r => (r.round || 1) === 1));
+  const r2rows = rows.filter(r => r.round === 2);
+  const result = r1.result;
+  const raters = r1.raters;
+
+  // ب-4: إن وُجدت درجات جولة ثانية، نضيفها تحت __r2 (نفس بنية الواجهة)
+  if (r2rows.length) {
+    const r2 = build(r2rows);
+    result.__r2 = r2.result;
   }
 
-  // متوسط كل طرف مجهول لكل بند (بشرط الحد الأدنى) — يظهر للجميع دون كشف الهوية
-  ANON.forEach(p => { result[p] = computePeerAvg(raters[p]); });
-
-  // التفصيل (اسم كل مُقيّم ودرجته) للمديرين فقط
   const canSeeDetail = ['stage_mgr', 'branch_mgr', 'admin'].includes(req.user.role);
   const payload = { eval: result };
   if (canSeeDetail) {
@@ -42,7 +52,6 @@ function getEmployeeEval(req, res) {
     payload.subordinateRaters = raters.subordinate;
     payload.beneficiaryRaters = raters.beneficiary;
   }
-  // العدد يظهر للجميع (يعرف كم قيّمه دون من)
   payload.peerCount = Object.keys(raters.peer).length;
   payload.subordinateCount = Object.keys(raters.subordinate).length;
   payload.beneficiaryCount = Object.keys(raters.beneficiary).length;
@@ -82,29 +91,32 @@ function computePeerAvg(peerRaters) {
 // للزملاء: raterId = المستخدم الحالي (يؤخذ من الرمز، لا يُوثق به من الطلب)
 function saveEval(req, res) {
   const empId = req.params.employeeId;
-  const { party, scores = {}, witnesses = {} } = req.body || {};
-  if (!['self', 'peer', 'supervisor', 'stage_mgr'].includes(party)) {
+  const { party, scores = {}, witnesses = {}, round = 1 } = req.body || {};
+  // كل الأطراف الستّة مقبولة الآن (كان المرؤوسون/المستفيدون مرفوضين)
+  if (!['self', 'peer', 'supervisor', 'stage_mgr', 'subordinate', 'beneficiary'].includes(party)) {
     return res.status(400).json({ error: 'طرف تقييم غير صالح' });
   }
-  // للزملاء: المُقيّم هو المستخدم الحالي دائماً (أمان — لا ينتحل غيره)
-  const raterId = party === 'peer' ? req.user.id : null;
+  const rnd = Number(round) === 2 ? 2 : 1;
+  // الأطراف مجهولة الهوية متعددة المُقيّمين: نميّز بمُقيّم. البقية rater_id = null
+  const ANON = ['peer', 'subordinate', 'beneficiary'];
+  const raterId = ANON.includes(party) ? req.user.id : null;
 
   const tx = db.transaction(() => {
-    // نحذف درجات هذا الطرف (وهذا المُقيّم للزملاء) ثم نُدرج الجديدة
-    if (party === 'peer') {
-      db.prepare('DELETE FROM eval_scores WHERE employee_id=? AND party=? AND rater_id=?').run(empId, party, raterId);
+    // نحذف درجات هذا الطرف لنفس الجولة (وهذا المُقيّم للأطراف المجهولة) ثم نُدرج الجديدة
+    if (ANON.includes(party)) {
+      db.prepare('DELETE FROM eval_scores WHERE employee_id=? AND party=? AND rater_id=? AND round=?').run(empId, party, raterId, rnd);
     } else {
-      db.prepare('DELETE FROM eval_scores WHERE employee_id=? AND party=?').run(empId, party);
+      db.prepare('DELETE FROM eval_scores WHERE employee_id=? AND party=? AND round=?').run(empId, party, rnd);
     }
-    const ins = db.prepare('INSERT INTO eval_scores (employee_id,party,rater_id,comp_key,item_index,score) VALUES (?,?,?,?,?,?)');
+    const ins = db.prepare('INSERT INTO eval_scores (employee_id,party,rater_id,round,comp_key,item_index,score) VALUES (?,?,?,?,?,?,?)');
     for (const comp of Object.keys(scores)) {
       for (const idx of Object.keys(scores[comp])) {
         const v = Number(scores[comp][idx]);
-        if (v > 0) ins.run(empId, party, raterId, comp, Number(idx), v);
+        if (v > 0) ins.run(empId, party, raterId, rnd, comp, Number(idx), v);
       }
     }
-    // الشواهد (للمتابع/المدير المباشر)
-    if (party === 'supervisor' || party === 'stage_mgr') {
+    // الشواهد (للمتابع/المدير المباشر) — الجولة الأولى فقط للتبسيط
+    if ((party === 'supervisor' || party === 'stage_mgr') && rnd === 1) {
       const insW = db.prepare('INSERT OR REPLACE INTO eval_witnesses (employee_id,party,comp_key,witness_text) VALUES (?,?,?,?)');
       for (const comp of Object.keys(witnesses)) {
         if (witnesses[comp]) insW.run(empId, party, comp, witnesses[comp]);

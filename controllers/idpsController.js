@@ -34,12 +34,12 @@ function saveIdp(req, res) {
 
   const tx = db.transaction(() => {
     // رأس الخطة
-    db.prepare(`INSERT INTO idps (employee_id, approved, approved_by, approved_at, needs_branch_approval, branch_approved_at, edit_unlocked, edit_unlocked_row, updated_at)
-      VALUES (@employee_id,@approved,@approved_by,@approved_at,@needs_branch_approval,@branch_approved_at,@edit_unlocked,@edit_unlocked_row,datetime('now'))
+    db.prepare(`INSERT INTO idps (employee_id, approved, approved_by, approved_at, needs_branch_approval, branch_approved_at, edit_unlocked, edit_unlocked_row, certificate, updated_at)
+      VALUES (@employee_id,@approved,@approved_by,@approved_at,@needs_branch_approval,@branch_approved_at,@edit_unlocked,@edit_unlocked_row,@certificate,datetime('now'))
       ON CONFLICT(employee_id) DO UPDATE SET
         approved=@approved, approved_by=@approved_by, approved_at=@approved_at,
         needs_branch_approval=@needs_branch_approval, branch_approved_at=@branch_approved_at,
-        edit_unlocked=@edit_unlocked, edit_unlocked_row=@edit_unlocked_row, updated_at=datetime('now')`)
+        edit_unlocked=@edit_unlocked, edit_unlocked_row=@edit_unlocked_row, certificate=@certificate, updated_at=datetime('now')`)
       .run({
         employee_id: empId,
         approved: b.approved ? 1 : 0,
@@ -49,6 +49,7 @@ function saveIdp(req, res) {
         branch_approved_at: b.branchApprovedAt || null,
         edit_unlocked: b.editUnlocked ? 1 : 0,
         edit_unlocked_row: b.editUnlockedRow || null,
+        certificate: b.certificate ? JSON.stringify(b.certificate) : null,
       });
 
     // البنود: نحذف القديمة ونُدرج الجديدة (أبسط وأضمن للاتساق)

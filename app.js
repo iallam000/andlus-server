@@ -65,16 +65,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.get('/reset-password', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
 });
-// [تشخيص مؤقت — يُزال بعد ضبط IP] يُرجع عنوان IP الخارجي للخادم
-app.get('/diag-ip', async (req, res) => {
-  try {
-    const r = await fetch('https://api.ipify.org?format=json');
-    const j = await r.json();
-    res.json({ ip: j.ip, cf: req.headers['cf-connecting-ip'] || null, xff: req.headers['x-forwarded-for'] || null });
-  } catch (e) {
-    res.json({ error: e.message });
-  }
-});
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'المسار غير موجود' });
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

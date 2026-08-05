@@ -78,8 +78,13 @@ async function sendPasswordReset(toEmail, resetLink, userName) {
   // 1) Resend — الأنسب للاستضافة السحابية
   const sentResend = await sendViaResend(toEmail, subject, text, html);
   if (sentResend) return true;
+  // إن كانت Resend مضبوطة ولم تنجح، نتوقّف (لا نلجأ لـ SMTP المحجوب على بعض الاستضافات)
+  if (process.env.RESEND_API_KEY) {
+    console.log(`   الرابط (احتياطي — في سجل الخادم): ${resetLink}`);
+    return false;
+  }
 
-  // 2) SMTP — احتياطي (إن مضبوط)
+  // 2) SMTP — احتياطي (فقط إن لم تُضبط Resend)
   const t = initTransporter();
   if (t) {
     const smtpTimeout = Number(process.env.SMTP_TIMEOUT) || 90000;

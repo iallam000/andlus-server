@@ -1,12 +1,14 @@
 // ═══════════════════════════════════════════════════════════════
 // وحدة إرسال البريد — ج-3 (نسيت كلمة السر)
 // أولوية الإرسال:
-//   1) Resend (API عبر HTTPS — يعمل على أي استضافة) إن وُجد RESEND_API_KEY
-//   2) SMTP (nodemailer) إن وُجدت متغيّرات SMTP_*
-//   3) طباعة الرابط في السجل (تطوير/احتياط)
+//   1) Brevo (API عبر HTTPS — لا يتطلب ملكية دومين المستلم) إن وُجد BREVO_API_KEY
+//   2) Resend (API عبر HTTPS) إن وُجد RESEND_API_KEY
+//   3) SMTP (nodemailer) إن وُجدت متغيّرات SMTP_*
+//   4) طباعة الرابط في السجل (تطوير/احتياط)
 // ═══════════════════════════════════════════════════════════════
 
 const RESEND_URL = 'https://api.resend.com/emails';
+const BREVO_URL = 'https://api.brevo.com/v3/smtp/email';
 
 let transporter = null;
 let nodemailer = null;
@@ -31,6 +33,41 @@ function initTransporter() {
     transporter = false;
   }
   return transporter;
+}
+
+// يرسل عبر Brevo HTTP API. يُرجع true عند النجاح، false إن لم تُضبط المتغيّرات.
+async function sendViaBrevo(toEmail, toName, subject, text, html) {
+  const key = process.env.BREVO_API_KEY;
+  if (!key) return false;
+  const from = process.env.BREVO_FROM || 'no-reply@yourdomain.com';
+  const fromName = process.env.BREVO_FROM_NAME || 'منصة الأندلس';
+  const timeout = Number(process.env.MAIL_TIMEOUT) || 20000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(BREVO_URL, {
+      method: 'POST',
+      headers: { 'api-key': key, 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        sender: { name: fromName, email: from },
+        to: [{ email: toEmail, name: toName || '' }],
+        subject, textContent: text, htmlContent: html,
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const msg = data && data.message ? data.message : `HTTP ${res.status}`;
+      throw new Error(`Brevo ${res.status}: ${msg}`);
+    }
+    console.log(`✉️ أُرسل بريد إعادة التعيين إلى: ${toEmail} (Brevo) ✓`);
+    return true;
+  } catch (e) {
+    console.error(`⚠️ فشل إرسال بريد إعادة التعيين إلى ${toEmail}:`, e.message);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // يرسل عبر Resend HTTP API. يُرجع true عند النجاح، false إن لم تُضبط المتغيّرات.
@@ -75,7 +112,15 @@ async function sendPasswordReset(toEmail, resetLink, userName) {
     <p style="color:#5B7A9E;font-size:13px">شركة الأندلس التعليمية</p>
   </div>`;
 
-  // 1) Resend — الأنسب للاستضافة السحابية
+  // 1) Brevo — لا يتطلب ملكية دومين المستلم
+  const sentBrevo = await sendViaBrevo(toEmail, userName, subject, text, html);
+  if (sentBrevo) return true;
+  if (process.env.BREVO_API_KEY) {
+    console.log(`   الرابط (احتياطي — في سجل الخادم): ${resetLink}`);
+    return false;
+  }
+
+  // 2) Resend — إن لم تُضبط Brevo
   const sentResend = await sendViaResend(toEmail, subject, text, html);
   if (sentResend) return true;
   // إن كانت Resend مضبوطة ولم تنجح، نتوقّف (لا نلجأ لـ SMTP المحجوب على بعض الاستضافات)
@@ -84,7 +129,7 @@ async function sendPasswordReset(toEmail, resetLink, userName) {
     return false;
   }
 
-  // 2) SMTP — احتياطي (فقط إن لم تُضبط Resend)
+  // 3) SMTP — احتياطي (فقط إن لم تُضبط أي خدمة HTTP)
   const t = initTransporter();
   if (t) {
     const smtpTimeout = Number(process.env.SMTP_TIMEOUT) || 90000;

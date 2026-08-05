@@ -53,12 +53,20 @@ async function sendPasswordReset(toEmail, resetLink, userName) {
     console.log(`   الرابط: ${resetLink}\n`);
     return false;
   }
-  await t.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: toEmail,
-    subject, text, html,
-  });
-  return true;
+  // تجنّب تعليق الطلب إذا تعذّر الوصول لخادم البريد (نربط الإرسال بمهلة زمنية)
+  const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('انتهت مهلة الاتصال بخادم البريد (SMTP)')), 20000));
+  try {
+    await Promise.race([
+      t.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to: toEmail, subject, text, html }),
+      timeout,
+    ]);
+    console.log(`📧 أُرسل بريد إعادة التعيين إلى: ${toEmail} (SMTP) ✓`);
+    return true;
+  } catch (e) {
+    console.error(`⚠️ فشل إرسال بريد إعادة التعيين إلى ${toEmail}:`, e.message);
+    console.log(`   الرابط (احتياطي — في سجل الخادم): ${resetLink}`);
+    return false;
+  }
 }
 
 module.exports = { sendPasswordReset };

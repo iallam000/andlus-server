@@ -54,7 +54,8 @@ async function sendPasswordReset(toEmail, resetLink, userName) {
     return false;
   }
   // تجنّب تعليق الطلب إذا تعذّر الوصول لخادم البريد (نربط الإرسال بمهلة زمنية)
-  const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('انتهت مهلة الاتصال بخادم البريد (SMTP)')), 20000));
+  const smtpTimeout = Number(process.env.SMTP_TIMEOUT) || 90000;
+  const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('انتهت مهلة الاتصال بخادم البريد (SMTP)')), smtpTimeout));
   try {
     await Promise.race([
       t.sendMail({ from: process.env.SMTP_FROM || process.env.SMTP_USER, to: toEmail, subject, text, html }),
